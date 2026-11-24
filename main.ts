@@ -15,16 +15,35 @@
 //   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
 // It prints nothing on success, and out/POST.json is byte-for-byte POST.json.
 
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const botDir = process.env.MAKEFUN_BOT_DIR ?? '/bot';
 const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
+const source = join(botDir, 'POST.json');
+const target = join(outputDir, 'POST.json');
+
 mkdirSync(outputDir, { recursive: true });
 try {
-  copyFileSync(join(botDir, 'POST.json'), join(outputDir, 'POST.json'));
+  copyFileSync(source, target);
 } catch (error) {
   console.error(`Could not copy POST.json from ${botDir}: ${(error as Error).message}`);
+  process.exit(1);
+}
+
+// Verify the copy before the gate reads it: a partial or truncated copy must
+// fail loudly here instead of silently handing a corrupt POST.json to the gate.
+try {
+  const sourceSize = statSync(source).size;
+  const targetSize = statSync(target).size;
+  if (sourceSize !== targetSize) {
+    throw new Error(`size mismatch after copy: source ${sourceSize} bytes, output ${targetSize} bytes`);
+  }
+  if (!readFileSync(source).equals(readFileSync(target))) {
+    throw new Error('content mismatch after copy: output differs from source');
+  }
+} catch (error) {
+  console.error(`POST.json copy verification failed: ${(error as Error).message}`);
   process.exit(1);
 }
